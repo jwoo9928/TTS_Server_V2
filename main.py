@@ -189,7 +189,7 @@ async def text_to_speech_stream(request_data: TTSRequest):
 if __name__ == "__main__":
     import uvicorn
     # For local testing, might need to adjust host/port/reload
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 
 # Add numpy import if needed for concatenation, check kokoro output type
 # import numpy

@@ -1,5 +1,5 @@
 # Use Python 3.9 slim image as a base
-ARG PYTHON_VERSION=3.9
+ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-slim as base
 
 # Set environment variables
