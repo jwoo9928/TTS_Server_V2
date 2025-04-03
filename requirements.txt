@@ -8,4 +8,4 @@ misaki[en] # Explicitly add for English support ('a' lang_code)
 # misaki[ja]
 # misaki[zh]
 aiofiles
-numpy # For potential array operations
+numpy<2 # For potential array operations
