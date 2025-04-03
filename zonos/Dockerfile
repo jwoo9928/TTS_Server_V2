@@ -49,13 +49,13 @@ RUN pip install --no-cache-dir \
     -f https://download.pytorch.org/whl/torch_stable.html
 
 # Install Python dependencies from requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
 
 # --- GPU Stage ---
 FROM base AS gpu
-ARG TORCH_VERSION=2.3.0
+ARG TORCH_VERSION=2.5.1  # 2.3.0 → 2.5.1로 변경
 ARG TORCHVISION_VERSION=0.18.0
-ARG TORCHAUDIO_VERSION=2.3.0
+ARG TORCHAUDIO_VERSION=2.5.1  # torchaudio도 같은 버전으로
 ARG CUDA_VERSION=11.8
 
 SHELL ["/bin/bash", "-c"]
