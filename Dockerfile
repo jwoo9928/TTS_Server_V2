@@ -1,5 +1,5 @@
-# Use Python 3.11 slim image as a base
-ARG PYTHON_VERSION=3.11
+# Use Python 3.9 slim image as a base
+ARG PYTHON_VERSION=3.9
 FROM python:${PYTHON_VERSION}-slim as base
 
 # Set environment variables
@@ -14,7 +14,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # - espeak-ng is required by kokoro
 # - libsndfile1 is required by soundfile
 # - git is needed if any pip package installs from git
-# - build-essential and python3-dev for potential compilation requirements
 RUN apt-get update && apt-get install -y --no-install-recommends \
     espeak-ng \
     libsndfile1 \
@@ -36,7 +35,7 @@ numpy>=1.24.0" > /app/requirements.txt
 
 # --- CPU Stage ---
 FROM base as cpu
-ARG TORCH_VERSION=2.1.0
+ARG TORCH_VERSION=2.1.0 # Specify desired torch CPU version
 ARG TORCHVISION_VERSION=0.16.0
 ARG TORCHAUDIO_VERSION=2.1.0
 
@@ -47,29 +46,35 @@ RUN pip install --no-cache-dir \
     torchaudio==${TORCHAUDIO_VERSION}+cpu \
     -f https://download.pytorch.org/whl/torch_stable.html
 
-# Copy and install Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --- GPU Stage ---
+# For GPU, we ideally need a base image with CUDA drivers.
+# Using nvidia/cuda image is recommended for simplicity.
+# Example: FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04
+# However, sticking to the python base and installing torch+cuda for flexibility as requested.
+# NOTE: This requires the host to have NVIDIA drivers and nvidia-docker/nvidia-container-toolkit.
 FROM base as gpu
-ARG TORCH_VERSION=2.1.0
+ARG TORCH_VERSION=2.1.0 # Specify desired torch GPU version
 ARG TORCHVISION_VERSION=0.16.0
 ARG TORCHAUDIO_VERSION=2.1.0
-ARG CUDA_VERSION=11.8
+ARG CUDA_VERSION=11.8 # Specify CUDA version compatible with host and torch version
 
-# Install PyTorch GPU version
+# Install PyTorch GPU version (matching CUDA version)
 RUN pip install --no-cache-dir \
     torch==${TORCH_VERSION} \
     torchvision==${TORCHVISION_VERSION} \
     torchaudio==${TORCHAUDIO_VERSION} \
-    --index-url https://download.pytorch.org/whl/cu${CUDA_VERSION//.}
+    --index-url https://download.pytorch.org/whl/cu${CUDA_VERSION//.} # Format CUDA version like cu118
 
-# Copy and install Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --- Final CPU Target Stage ---
+# This stage uses the 'cpu' build stage as its base
 FROM cpu as final-cpu
 WORKDIR /app
 
@@ -86,6 +91,7 @@ EXPOSE 8080
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
 
 # --- Final GPU Target Stage ---
+# This stage uses the 'gpu' build stage as its base
 FROM gpu as final-gpu
 WORKDIR /app
 
