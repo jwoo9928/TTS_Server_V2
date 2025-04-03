@@ -1,9 +1,7 @@
-torch>=2.0.0
-torchaudio>=2.0.0
 numpy>=1.20.0
-fastapi>=0.95.0
+fastapi
 uvicorn>=0.21.0
 pydantic>=1.10.7
-soundfile>=0.12.1
-zonos>=0.1.0
+soundfile
+zonos
 python-multipart>=0.0.6
