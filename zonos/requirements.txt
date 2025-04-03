@@ -3,5 +3,5 @@ fastapi
 uvicorn>=0.21.0
 pydantic>=1.10.7
 soundfile
-zonos
+zonos>=0.1.0.dev0
 python-multipart>=0.0.6
