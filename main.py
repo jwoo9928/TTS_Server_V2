@@ -1,8 +1,10 @@
+# main.py
 import asyncio
 import io
+import numpy as np
 import soundfile as sf
 import torch
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -31,26 +33,25 @@ async def lifespan(app: FastAPI):
         logger.info("Kokoro pipeline loaded successfully.")
     except Exception as e:
         logger.error(f"Failed to load Kokoro pipeline: {e}", exc_info=True)
-        # You might want to prevent the app from starting if the model fails to load
-        # For now, we'll let it start but endpoints will fail.
         pipeline = None
     yield
-    # Clean up resources if needed during shutdown (optional)
+    # Clean up resources if needed during shutdown
     logger.info("Shutting down...")
-    pipeline = None # Release memory if possible
+    pipeline = None  # Release memory
 
 app = FastAPI(lifespan=lifespan)
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = 'af_heart' # Default voice
+    voice: str = 'af_heart'  # Default voice
     speed: float = 1.0
     split_pattern: str = r'\n+'
 
-async def generate_audio_sync(text: str, voice: str, speed: float, split_pattern: str):
+def generate_audio_sync(text: str, voice: str, speed: float, split_pattern: str):
     """Synchronous function to generate audio using kokoro."""
     if pipeline is None:
         raise RuntimeError("Kokoro pipeline is not initialized.")
+    
     try:
         logger.info(f"Generating audio for voice: {voice}, speed: {speed}")
         generator = pipeline(text, voice=voice, speed=speed, split_pattern=split_pattern)
@@ -65,14 +66,16 @@ async def generate_audio_sync(text: str, voice: str, speed: float, split_pattern
             logger.warning("No audio chunks generated.")
             return None
 
-        # Concatenate chunks - assuming they are numpy arrays or similar
-        full_audio = torch.cat(all_audio_chunks) if isinstance(all_audio_chunks[0], torch.Tensor) else \
-                     numpy.concatenate(all_audio_chunks) # Add numpy import if needed
+        # Concatenate chunks
+        if isinstance(all_audio_chunks[0], torch.Tensor):
+            full_audio = torch.cat(all_audio_chunks)
+            full_audio_np = full_audio.cpu().numpy()
+        else:
+            full_audio_np = np.concatenate(all_audio_chunks)
 
         # Save to an in-memory WAV file
         buffer = io.BytesIO()
-        # Kokoro's default rate is 24000
-        sf.write(buffer, full_audio.cpu().numpy() if isinstance(full_audio, torch.Tensor) else full_audio, 24000, format='WAV')
+        sf.write(buffer, full_audio_np, 24000, format='WAV')
         buffer.seek(0)
         logger.info("Audio generation complete.")
         return buffer
@@ -98,98 +101,78 @@ async def text_to_speech(request_data: TTSRequest):
             request_data.speed,
             request_data.split_pattern
         )
+        
         if audio_buffer is None:
-             raise HTTPException(status_code=500, detail="TTS generation failed: No audio produced.")
+            raise HTTPException(status_code=500, detail="TTS generation failed: No audio produced.")
 
-        return StreamingResponse(audio_buffer, media_type="audio/wav")
-    except RuntimeError as e: # Catch specific runtime error from generate_audio_sync
-         raise HTTPException(status_code=503, detail=f"TTS Service Unavailable: {e}")
+        # Return the audio stream
+        audio_buffer.seek(0)
+        return StreamingResponse(
+            audio_buffer, 
+            media_type="audio/wav",
+            headers={"Content-Disposition": "attachment; filename=audio.wav"}
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=f"TTS Service Unavailable: {str(e)}")
     except Exception as e:
         logger.error(f"Unhandled exception in /tts endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
-
-
-async def stream_audio_generator(text: str, voice: str, speed: float, split_pattern: str):
-    """
-    Asynchronous generator that yields audio chunks as they are produced by kokoro
-    running in a separate thread.
-    """
-    if pipeline is None:
-        raise RuntimeError("Kokoro pipeline is not initialized.")
-
-    # Use an asyncio Queue to communicate between the thread and the async generator
-    queue = asyncio.Queue()
-
-    async def producer():
-        """Runs the blocking kokoro generator in a thread and puts chunks in the queue."""
-        try:
-            logger.info(f"Streaming audio for voice: {voice}, speed: {speed}")
-            # This is the blocking part
-            generator = pipeline(text, voice=voice, speed=speed, split_pattern=split_pattern)
-            for i, (gs, ps, audio_chunk) in enumerate(generator):
-                logger.debug(f"Streaming chunk {i}")
-                # Convert chunk to bytes (WAV format) before putting in queue
-                buffer = io.BytesIO()
-                sf.write(buffer, audio_chunk.cpu().numpy() if isinstance(audio_chunk, torch.Tensor) else audio_chunk, 24000, format='WAV')
-                await queue.put(buffer.getvalue())
-            await queue.put(None) # Signal end of stream
-            logger.info("Streaming generation complete.")
-        except Exception as e:
-            logger.error(f"Error during streaming audio generation: {e}", exc_info=True)
-            await queue.put(e) # Put exception in queue to signal error
-
-    # Start the producer thread
-    producer_task = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(producer())))
-
-    # Consume from the queue
-    while True:
-        item = await queue.get()
-        if item is None:
-            break # End of stream
-        if isinstance(item, Exception):
-            raise item # Propagate exception
-        yield item
-        queue.task_done()
-
-    await producer_task # Ensure producer finishes
-
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.post("/tts-stream")
 async def text_to_speech_stream(request_data: TTSRequest):
     """
     Generates TTS audio and streams the WAV audio chunks as they become available.
-    Handles requests concurrently.
     """
     if pipeline is None:
         raise HTTPException(status_code=503, detail="TTS Service Unavailable: Model not loaded.")
 
-    try:
-        # Note: StreamingResponse expects an async generator or iterator
-        audio_stream = stream_audio_generator(
-            request_data.text,
-            request_data.voice,
-            request_data.speed,
-            request_data.split_pattern
-        )
-        # Need to figure out how to stream WAV chunks properly.
-        # The current stream_audio_generator yields complete mini-WAV files.
-        # A better approach might be to yield raw audio samples and handle WAV header separately,
-        # but that's more complex. For now, streaming mini-WAVs might work for some clients.
-        # Alternatively, could stream raw PCM and require client to know format.
-        # Let's stick with streaming mini-WAV chunks for simplicity first.
-        return StreamingResponse(audio_stream, media_type="audio/wav")
-        # Consider media_type="application/octet-stream" if clients handle raw chunks
+    async def audio_stream_generator():
+        try:
+            # Use async thread to run the blocking kokoro generator
+            async def process_chunks():
+                generator = pipeline(
+                    request_data.text, 
+                    voice=request_data.voice, 
+                    speed=request_data.speed, 
+                    split_pattern=request_data.split_pattern
+                )
+                
+                # Send WAV header first
+                yield b'RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\\\0\0\0\x01\x18\0data\0\0\0\0'
+                
+                # Process each chunk
+                for i, (gs, ps, audio_chunk) in enumerate(generator):
+                    logger.debug(f"Streaming chunk {i}")
+                    # Convert tensor to numpy if needed
+                    if isinstance(audio_chunk, torch.Tensor):
+                        audio_np = audio_chunk.cpu().numpy()
+                    else:
+                        audio_np = audio_chunk
+                        
+                    # Convert to bytes and yield
+                    audio_bytes = audio_np.tobytes()
+                    yield audio_bytes
+                    
+                logger.info("Streaming generation complete.")
+            
+            # Start the generator in a separate thread and stream results
+            chunks_generator = process_chunks()
+            async for chunk in chunks_generator:
+                yield chunk
+                
+        except Exception as e:
+            logger.error(f"Error during streaming audio generation: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Streaming Error: {str(e)}")
 
-    except RuntimeError as e:
-         raise HTTPException(status_code=503, detail=f"TTS Service Unavailable: {e}")
+    try:
+        return StreamingResponse(
+            audio_stream_generator(),
+            media_type="audio/wav",
+        )
     except Exception as e:
         logger.error(f"Unhandled exception in /tts-stream endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
-    # For local testing, might need to adjust host/port/reload
     uvicorn.run(app, host="0.0.0.0", port=8080)
-
-# Add numpy import if needed for concatenation, check kokoro output type
-# import numpy
