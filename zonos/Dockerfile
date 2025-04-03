@@ -55,7 +55,8 @@ RUN pip install --no-cache-dir \
 RUN rm -rf /tmp/*
 
 # Install Python dependencies from requirements.txt
-RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
+RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt \
+    && rm -rf /root/.cache/pip
 
 # --- GPU Stage ---
 FROM base AS gpu
