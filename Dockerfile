@@ -107,6 +107,8 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", 
 # To build, use --target flag:
 # For CPU: docker build --target final-cpu -t tts-server:cpu .
 # For GPU: docker build --target final-gpu -t tts-server:gpu .
+# docker builder prune -a --force && docker build --target final-cpu -t tts-server:cpu . --no-cache
+
 # 
 # To run with GPU:
 # docker run --gpus all -p 8080:8080 tts-server:gpu
