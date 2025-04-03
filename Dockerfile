@@ -1,5 +1,5 @@
 # Use Python 3.9 slim image as a base
-ARG PYTHON_VERSION=3.9
+ARG PYTHON_VERSION=3.12.0
 FROM python:${PYTHON_VERSION}-slim as base
 
 # Set environment variables
@@ -35,9 +35,9 @@ numpy>=1.24.0" > /app/requirements.txt
 
 # --- CPU Stage ---
 FROM base as cpu
-ARG TORCH_VERSION=2.1.0 # Specify desired torch CPU version
-ARG TORCHVISION_VERSION=0.16.0
-ARG TORCHAUDIO_VERSION=2.1.0
+ARG TORCH_VERSION=2.3.1 # Specify desired torch CPU version
+ARG TORCHVISION_VERSION=0.18.0
+ARG TORCHAUDIO_VERSION=2.3.1
 
 # Install PyTorch CPU version
 RUN pip install --no-cache-dir \
