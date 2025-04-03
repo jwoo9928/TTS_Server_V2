@@ -52,6 +52,8 @@ RUN pip install --no-cache-dir \
     torchaudio==${TORCHAUDIO_VERSION}+cpu \
     -f https://download.pytorch.org/whl/torch_stable.html
 
+RUN rm -rf /tmp/*
+
 # Install Python dependencies from requirements.txt
 RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
 
