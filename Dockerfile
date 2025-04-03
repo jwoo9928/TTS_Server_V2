@@ -50,6 +50,8 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN python -m spacy download en_core_web_sm
+
 # --- GPU Stage ---
 # For GPU, we ideally need a base image with CUDA drivers.
 # Using nvidia/cuda image is recommended for simplicity.
