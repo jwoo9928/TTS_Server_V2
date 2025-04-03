@@ -13,13 +13,19 @@ services:
       - zonos
 
   kokoro:
-    build: ./kokoro
+    build:
+      context: ./kokoro
+      args:
+        BUILD_TYPE: cpu # ⬅️ 동일하게 CPU로 지정
     container_name: kokoro
     ports:
       - "8081:8080"
 
   zonos:
-    build: ./zonos
+    build:
+      context: ./zonos
+      args:
+        BUILD_TYPE: cpu # ⬅️ 동일하게 CPU로 지정
     container_name: zonos
     ports:
       - "8082:8080"

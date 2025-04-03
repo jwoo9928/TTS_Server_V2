@@ -1,7 +1,11 @@
-numpy>=1.20.0
 fastapi
-uvicorn>=0.21.0
-pydantic>=1.10.7
+uvicorn[standard]
+zonos
 soundfile
-zonos>=0.1.0.dev0
-python-multipart>=0.0.6
+# torch will be installed separately in the Dockerfile for CPU/GPU flexibility
+# misaki dependencies for specific languages can be added here if needed, e.g.:
+# Explicitly add for English support ('a' lang_code)
+# misaki[ja]
+# misaki[zh]
+aiofiles
+numpy>=2.2.2

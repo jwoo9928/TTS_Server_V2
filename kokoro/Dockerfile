@@ -1,14 +1,14 @@
 # Use Python 3.9 slim image as a base
 ARG PYTHON_VERSION=3.12.0
-FROM python:${PYTHON_VERSION}-slim as base
+FROM python:${PYTHON_VERSION}-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    PYTHONPATH="/app:${PYTHONPATH}"
+    PIP_DEFAULT_TIMEOUT=100 
+    #PYTHONPATH="/app:${PYTHONPATH}"
 
 # Install system dependencies
 # - espeak-ng is required by kokoro
@@ -34,7 +34,7 @@ soundfile>=0.12.1\n\
 numpy>=1.24.0" > /app/requirements.txt
 
 # --- CPU Stage ---
-FROM base as cpu
+FROM base AS cpu
 ARG TORCH_VERSION=2.3.0 # Specify desired torch CPU version
 ARG TORCHVISION_VERSION=0.18.0
 ARG TORCHAUDIO_VERSION=2.3.0
@@ -58,12 +58,13 @@ RUN python -m spacy download en_core_web_sm
 # Example: FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04
 # However, sticking to the python base and installing torch+cuda for flexibility as requested.
 # NOTE: This requires the host to have NVIDIA drivers and nvidia-docker/nvidia-container-toolkit.
-FROM base as gpu
-ARG TORCH_VERSION=2.1.0 # Specify desired torch GPU version
-ARG TORCHVISION_VERSION=0.16.0
-ARG TORCHAUDIO_VERSION=2.1.0
+FROM base AS gpu
+ARG TORCH_VERSION=2.3.0 # Specify desired torch CPU version
+ARG TORCHVISION_VERSION=0.18.0
+ARG TORCHAUDIO_VERSION=2.3.0
 ARG CUDA_VERSION=11.8 # Specify CUDA version compatible with host and torch version
 
+SHELL ["/bin/bash", "-c"]
 # Install PyTorch GPU version (matching CUDA version)
 RUN pip install --no-cache-dir \
     torch==${TORCH_VERSION} \
@@ -77,7 +78,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # --- Final CPU Target Stage ---
 # This stage uses the 'cpu' build stage as its base
-FROM cpu as final-cpu
+FROM cpu AS final-cpu
 WORKDIR /app
 
 # Copy application code
@@ -94,7 +95,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", 
 
 # --- Final GPU Target Stage ---
 # This stage uses the 'gpu' build stage as its base
-FROM gpu as final-gpu
+FROM gpu AS final-gpu
 WORKDIR /app
 
 # Copy application code
