@@ -1,4 +1,4 @@
-# main.py
+# main.py - 파이프라인 인스턴스
 import asyncio
 import io
 import numpy as np

@@ -35,9 +35,9 @@ numpy>=1.24.0" > /app/requirements.txt
 
 # --- CPU Stage ---
 FROM base as cpu
-ARG TORCH_VERSION=2.3.1 # Specify desired torch CPU version
+ARG TORCH_VERSION=2.3.0 # Specify desired torch CPU version
 ARG TORCHVISION_VERSION=0.18.0
-ARG TORCHAUDIO_VERSION=2.3.1
+ARG TORCHAUDIO_VERSION=2.3.0
 
 # Install PyTorch CPU version
 RUN pip install --no-cache-dir \
