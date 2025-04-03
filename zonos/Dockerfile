@@ -10,6 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DEFAULT_TIMEOUT=100 \
     PYTHONPATH="/app:${PYTHONPATH:-}"
 
+
+# Set temporary directory
+ENV TMPDIR='/var/tmp'
+
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     espeak-ng \
