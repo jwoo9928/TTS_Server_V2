@@ -1,5 +1,5 @@
 fastapi
-uvicorn[standard]
+uvicorn
 zonos
 soundfile
 # torch will be installed separately in the Dockerfile for CPU/GPU flexibility

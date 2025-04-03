@@ -7,8 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100 \
-    PYTHONPATH="/app:${PYTHONPATH:-}"
+    PIP_DEFAULT_TIMEOUT=100
 
 
 # Set temporary directory
@@ -58,9 +57,9 @@ RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.
 
 # --- GPU Stage ---
 FROM base AS gpu
-ARG TORCH_VERSION=2.5.1  # 2.3.0 → 2.5.1로 변경
+ARG TORCH_VERSION=2.5.1
 ARG TORCHVISION_VERSION=0.18.0
-ARG TORCHAUDIO_VERSION=2.5.1  # torchaudio도 같은 버전으로
+ARG TORCHAUDIO_VERSION=2.5.1
 ARG CUDA_VERSION=11.8
 
 SHELL ["/bin/bash", "-c"]
