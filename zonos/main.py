@@ -4,13 +4,15 @@ import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict
 import logging
+from zonos.utils import DEFAULT_DEVICE as device
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 model = None
-device = "cuda" if torch.cuda.is_available() else "cpu"
 logger.info(f"Using device: {device}")
 
 @asynccontextmanager
@@ -45,18 +46,32 @@ app = FastAPI(lifespan=lifespan)
 
 class TTSRequest(BaseModel):
     text: str
-    speaker_path: str  # Path to the reference audio file
+    speaker_path: Optional[str] = None # Optional path to reference audio file
     language: str = "en-us"  # Default language
     speed: float = 1.0
 
-async def process_audio_reference(speaker_path):
-    """Load and process speaker reference audio."""
-    try:
-        wav, sampling_rate = await asyncio.to_thread(torchaudio.load, speaker_path)
-        return wav, sampling_rate
-    except Exception as e:
-        logger.error(f"Error loading reference audio: {e}", exc_info=True)
-        raise RuntimeError(f"Failed to load reference audio: {str(e)}")
+async def process_audio_reference(speaker_path: Optional[str] = None, speaker_file: Optional[UploadFile] = None):
+    """Load and process speaker reference audio from path or uploaded file."""
+    wav = None
+    sampling_rate = None
+
+    if speaker_path:
+        try:
+            wav, sampling_rate = await asyncio.to_thread(torchaudio.load, speaker_path)
+        except Exception as e:
+            logger.error(f"Error loading reference audio from path: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to load reference audio from path: {str(e)}")
+    elif speaker_file:
+        try:
+            contents = await speaker_file.read()
+            wav, sampling_rate = await asyncio.to_thread(torchaudio.load, io.BytesIO(contents))
+        except Exception as e:
+            logger.error(f"Error loading uploaded reference audio: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to load uploaded reference audio: {str(e)}")
+    else:
+        raise ValueError("Either speaker_path or a speaker file must be provided.")
+    
+    return wav, sampling_rate
 
 def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
     """Synchronous function to generate audio using Zonos."""
@@ -95,17 +110,31 @@ def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
         raise
 
 @app.post("/tts")
-async def text_to_speech(request_data: TTSRequest):
+async def text_to_speech(
+    request_data: TTSRequest,
+    speaker_file: Optional[UploadFile] = File(None, description="Optional speaker reference audio file")
+):
     """
-    Generates TTS audio and returns the full WAV file.
+    Generates TTS audio, using either speaker_path or uploaded speaker_file, and returns the full WAV file.
     """
     if model is None:
         raise HTTPException(status_code=503, detail="TTS Service Unavailable: Model not loaded.")
 
+    speaker_wav = None
+    sampling_rate = None
     try:
-        # Load speaker reference audio
-        speaker_wav, sampling_rate = await process_audio_reference(request_data.speaker_path)
-        
+        # Load speaker reference audio from path or file
+        speaker_wav, sampling_rate = await process_audio_reference(request_data.speaker_path, speaker_file)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=f"TTS Service Unavailable: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error processing audio reference: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+
+    try:        
         # Run the synchronous generation function in a separate thread
         audio_buffer = await asyncio.to_thread(
             generate_audio_sync,
@@ -258,4 +287,4 @@ async def text_to_speech_stream(request_data: TTSRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8082)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
