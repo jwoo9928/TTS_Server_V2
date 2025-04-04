@@ -46,3 +46,6 @@ EXPOSE 8000
 
 # 진입점 명령
 ENTRYPOINT ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+# docker run -p 8000:8000 -v $(pwd)/pretrained_models:/app/pretrained_models -v $(pwd)/results:/app/results -e DEVICE_ID=-1 spark-tts-api
+# docker run --gpus all -p 8000:8000 -v $(pwd)/pretrained_models:/app/pretrained_models -v $(pwd)/results:/app/results spark-tts-api

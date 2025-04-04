@@ -23,7 +23,7 @@ app = FastAPI(title="Spark TTS API", description="Spark TTS를 이용한 음성 
 # 전역 변수 설정
 model = None
 model_dir = os.environ.get("MODEL_DIR", "pretrained_models/Spark-TTS-0.5B")
-device_id = int(os.environ.get("DEVICE_ID", 0))
+current_device_id = int(os.environ.get("DEVICE_ID", 0))
 results_dir = os.environ.get("RESULTS_DIR", "results")
 
 # 결과 디렉토리 생성
@@ -36,7 +36,7 @@ class TTSRequest(BaseModel):
     pitch: Optional[int] = None
     speed: Optional[int] = None
 
-def initialize_model(model_dir=model_dir, device_id=device_id):
+def initialize_model(model_dir=model_dir, device_id=current_device_id):
     """모델 초기화 함수"""
     logger.info(f"Loading model from: {model_dir}")
 
@@ -45,14 +45,14 @@ def initialize_model(model_dir=model_dir, device_id=device_id):
         # macOS with MPS support (Apple Silicon)
         device = torch.device(f"mps:{device_id}")
         logger.info(f"Using MPS device: {device}")
-    elif torch.cuda.is_available():
+    elif torch.cuda.is_available() and device_id >= 0:
         # CUDA 지원 시스템
         device = torch.device(f"cuda:{device_id}")
         logger.info(f"Using CUDA device: {device}")
     else:
         # CPU 폴백
         device = torch.device("cpu")
-        logger.info("GPU acceleration not available, using CPU")
+        logger.info("Using CPU for inference")
 
     return SparkTTS(model_dir, device)
 
@@ -177,18 +177,19 @@ def health_check():
 @app.get("/switch_device")
 def switch_device(device_id: int):
     """디바이스 전환 API"""
-    global model, device_id
+    global model, current_device_id
     
-    if device_id < 0:
-        raise HTTPException(status_code=400, detail="Device ID should be non-negative")
+    if device_id < -1:
+        raise HTTPException(status_code=400, detail="Device ID should be -1 (for CPU) or a non-negative number (for GPU)")
     
     try:
         # 새 디바이스에 모델 다시 로드
         model = initialize_model(model_dir=model_dir, device_id=device_id)
-        return {"message": f"Model reloaded on device {device_id}"}
+        current_device_id = device_id
+        return {"message": f"Model reloaded on device {'CPU' if device_id == -1 else f'GPU:{device_id}'}"}
     except Exception as e:
         logger.error(f"Error switching device: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to switch device: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
