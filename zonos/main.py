@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize Zonos model
         # Default to hybrid model, can be changed via environment variable
-        model_type = "hybrid"  # or "transformer"
+        model_type = "transformer"  # or "transformer"
         model_path = f"Zyphra/Zonos-v0.1-{model_type}"
         model = Zonos.from_pretrained(model_path, device=device)
         logger.info(f"Zonos model ({model_type}) loaded successfully on {device}.")
