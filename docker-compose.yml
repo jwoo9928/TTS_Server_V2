@@ -25,9 +25,6 @@ services:
   zonos:
     build:
       context: ./zonos
-      target: final-cpu
-      args:
-        BUILD_TYPE: cpu # ⬅️ 동일하게 CPU로 지정
     container_name: zonos
     ports:
       - "8082:8080"

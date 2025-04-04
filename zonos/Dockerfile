@@ -23,4 +23,6 @@ COPY main.py /Zonos/main.py
 EXPOSE 8080
 
 # Uvicorn 실행 명령어
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["uv","run","uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+
+#docker build -t zonos .
