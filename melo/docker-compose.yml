@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tts-server:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/app/models  # 모델을 볼륨으로 마운트(선택사항)
+    environment:
+      - TTS_LANGUAGE=KR
+      - TTS_DEVICE=cpu  # GPU 사용 시 'cuda:0'로 변경
+    deploy:
+      resources:
+        limits:
+          cpus: '4'  # 6코어 제한
+          memory: 4G  # 메모리 제한
