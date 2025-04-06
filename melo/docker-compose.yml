@@ -6,7 +6,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./models:/app/models  # 모델을 볼륨으로 마운트(선택사항)
+      - ./MeloTTS:/app/MeloTTS  # MeloTTS 코드 볼륨 마운트(선택사항)
     environment:
       - TTS_LANGUAGE=KR
       - TTS_DEVICE=cpu  # GPU 사용 시 'cuda:0'로 변경

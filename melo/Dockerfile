@@ -13,14 +13,15 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 패키지 설치 요구사항 파일 복사
+# MeloTTS 클론 및 설치
+RUN git clone https://github.com/myshell-ai/MeloTTS.git && \
+    cd MeloTTS && \
+    pip install -e . && \
+    python -m unidic download
+
+# 필요한 Python 추가 패키지 설치
 COPY requirements.txt .
-
-# 필요한 Python 패키지 설치
 RUN pip install --no-cache-dir -r requirements.txt
-
-# melo TTS 설치
-RUN pip install --no-cache-dir git+https://github.com/melothebig/melo-tts.git
 
 # 서버 코드 복사
 COPY main.py .
