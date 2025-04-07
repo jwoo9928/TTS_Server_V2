@@ -1,17 +1,15 @@
-version: '3.8'
+version: "3.8"
 
 services:
   tts-server:
     build: .
     ports:
       - "8080:8080"
-    volumes:
-      - ./MeloTTS:/app/MeloTTS  # MeloTTS 코드 볼륨 마운트(선택사항)
     environment:
       - TTS_LANGUAGE=KR
-      - TTS_DEVICE=cpu  # GPU 사용 시 'cuda:0'로 변경
+      - TTS_DEVICE=cpu # GPU 사용 시 'cuda:0'로 변경
     deploy:
       resources:
         limits:
-          cpus: '4'  # 6코어 제한
-          memory: 4G  # 메모리 제한
+          cpus: "4" # 6코어 제한
+          memory: 4G # 메모리 제한
