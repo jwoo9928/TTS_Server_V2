@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 # MeloTTS 클론 및 설치
 RUN git clone https://github.com/myshell-ai/MeloTTS.git && \
     cd MeloTTS && \
-    pip install -e . && \
+    pip install --use-deprecated=legacy-resolver -e . && \
     python -m unidic download
 
 # 필요한 Python 추가 패키지 설치
