@@ -3,7 +3,7 @@ FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
 
 # 필수 패키지 설치
 RUN apt update && \
-    apt install -y git espeak-ng && \
+    apt install -y git espeak-ng libsndfile1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Zonos 저장소 클론 및 폴더 이동
