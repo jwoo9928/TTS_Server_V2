@@ -1,9 +1,12 @@
 import asyncio
+import asyncio
 import io
 import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
+import tempfile # Added tempfile
+import os # Added os
 from typing import Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form # Added Form
 from fastapi.responses import StreamingResponse
@@ -62,12 +65,48 @@ async def process_audio_reference(speaker_path: Optional[str] = None, speaker_fi
             logger.error(f"Error loading reference audio from path: {e}", exc_info=True)
             raise RuntimeError(f"Failed to load reference audio from path: {str(e)}")
     elif speaker_file:
+        temp_file_path = None # Initialize path variable
         try:
-            contents = await speaker_file.read()
-            wav, sampling_rate = await asyncio.to_thread(torchaudio.load, io.BytesIO(contents))
+            # Log file details
+            logger.info(f"Processing uploaded file: filename='{speaker_file.filename}', content_type='{speaker_file.content_type}'")
+            
+            # Create a temporary file to save the upload
+            # Use delete=False on Windows if needed, but True is safer generally
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(speaker_file.filename or ".wav")[1]) as temp_file_obj:
+                contents = await speaker_file.read()
+                temp_file_obj.write(contents)
+                temp_file_path = temp_file_obj.name # Get the path
+            
+            logger.info(f"Uploaded file saved temporarily to: {temp_file_path}")
+
+            # Load from the temporary file path using soundfile
+            data, sampling_rate = await asyncio.to_thread(
+                sf.read, temp_file_path, dtype='float32'
+            )
+            # Convert numpy array to torch tensor
+            wav = torch.from_numpy(data).t() # Transpose to get [channels, samples]
+            # Ensure it has a channel dimension if mono
+            if wav.ndim == 1:
+                wav = wav.unsqueeze(0)
         except Exception as e:
-            logger.error(f"Error loading uploaded reference audio: {e}", exc_info=True)
-            raise RuntimeError(f"Failed to load uploaded reference audio: {str(e)}")
+            # Log the specific error during loading with soundfile
+            logger.error(f"Soundfile failed to load uploaded reference audio from temp file: {e}", exc_info=True)
+            # Fallback attempt with torchaudio on the same temp file
+            try:
+                logger.warning(f"Attempting fallback load with torchaudio for temp file: {temp_file_path}")
+                wav, sampling_rate = await asyncio.to_thread(torchaudio.load, temp_file_path)
+                logger.info("Fallback load with torchaudio succeeded.")
+            except Exception as e_torch:
+                 logger.error(f"Fallback torchaudio load also failed for temp file: {e_torch}", exc_info=True)
+                 raise RuntimeError(f"Failed to load uploaded reference audio (tried soundfile and torchaudio): {str(e)}")
+        finally:
+            # Clean up the temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                    logger.info(f"Temporary file deleted: {temp_file_path}")
+                except OSError as e_os:
+                    logger.error(f"Error deleting temporary file {temp_file_path}: {e_os}")
     else:
         raise ValueError("Either speaker_path or a speaker file must be provided.")
     
