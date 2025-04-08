@@ -9,3 +9,4 @@ misaki[en] # Explicitly add for English support ('a' lang_code)
 # misaki[zh]
 aiofiles
 numpy<2 # For potential array operations
+kokoro-onnx
