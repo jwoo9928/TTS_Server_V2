@@ -5,7 +5,7 @@ import soundfile as sf
 import torch
 import torchaudio
 from typing import Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form # Added Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -111,11 +111,16 @@ def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
 
 @app.post("/tts")
 async def text_to_speech(
-    request_data: TTSRequest,
+    text: str = Form(...),
+    language: str = Form("en-us"),
+    speed: float = Form(1.0),
+    speaker_path: Optional[str] = Form(None),
     speaker_file: Optional[UploadFile] = File(None, description="Optional speaker reference audio file")
 ):
     """
-    Generates TTS audio, using either speaker_path or uploaded speaker_file, and returns the full WAV file.
+    Generates TTS audio using multipart/form-data. 
+    Accepts text, language, speed, optional speaker_path (form fields), 
+    and optional speaker_file (file upload). Returns the full WAV file.
     """
     if model is None:
         raise HTTPException(status_code=503, detail="TTS Service Unavailable: Model not loaded.")
@@ -124,7 +129,7 @@ async def text_to_speech(
     sampling_rate = None
     try:
         # Load speaker reference audio from path or file
-        speaker_wav, sampling_rate = await process_audio_reference(request_data.speaker_path, speaker_file)
+        speaker_wav, sampling_rate = await process_audio_reference(speaker_path, speaker_file)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except RuntimeError as e:
@@ -138,11 +143,11 @@ async def text_to_speech(
         # Run the synchronous generation function in a separate thread
         audio_buffer = await asyncio.to_thread(
             generate_audio_sync,
-            request_data.text,
+            text, # Use the form parameter
             speaker_wav,
             sampling_rate,
-            request_data.language,
-            request_data.speed
+            language, # Use the form parameter
+            speed # Use the form parameter
         )
         
         if audio_buffer is None:
