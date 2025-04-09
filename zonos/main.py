@@ -137,10 +137,23 @@ def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
         # Decode to audio waveform
         wavs = model.autoencoder.decode(codes)
         audio_np = wavs[0].cpu().numpy()
+
+        # --- Debugging ---
+        output_sampling_rate = model.autoencoder.sampling_rate
+        logger.info(f"Attempting to write audio data:")
+        logger.info(f"  - Data type: {audio_np.dtype}")
+        logger.info(f"  - Data shape: {audio_np.shape}")
+        logger.info(f"  - Sampling rate: {output_sampling_rate}")
+        # --- End Debugging ---
         
         # Save to an in-memory WAV file
         buffer = io.BytesIO()
-        sf.write(buffer, audio_np, model.autoencoder.sampling_rate, format='WAV')
+        # Ensure data is float32, which is common for sf.write WAV
+        if audio_np.dtype != np.float32:
+            logger.warning(f"Audio data type is {audio_np.dtype}, converting to float32 for writing.")
+            audio_np = audio_np.astype(np.float32)
+            
+        sf.write(buffer, audio_np, output_sampling_rate, format='WAV', subtype='FLOAT') # Explicitly set subtype
         buffer.seek(0)
         logger.info("Audio generation complete.")
         return buffer
