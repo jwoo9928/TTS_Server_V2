@@ -136,27 +136,20 @@ def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
         
         # Decode to audio waveform
         wavs = model.autoencoder.decode(codes)
-        audio_tensor = wavs[0].cpu()
+        audio_tensor = wavs.cpu()
 
-        # --- Debugging ---
-        output_sampling_rate = model.autoencoder.sampling_rate
-        audio_np = audio_tensor.numpy()
-        logger.info(f"Attempting to write audio data:")
-        logger.info(f"  - Data type: {audio_np.dtype}")
-        logger.info(f"  - Data shape: {audio_np.shape}")
-        logger.info(f"  - Sampling rate: {output_sampling_rate}")
-        # --- End Debugging ---
-        
-        # Use BytesIO buffer directly with torchaudio
+        torchaudio.save("sample.wav", audio_tensor[0], model.autoencoder.sampling_rate)
+
+        # Read the file back into memory
         buffer = io.BytesIO()
+        with open("sample.wav", 'rb') as f:
+            buffer.write(f.read())
         
-        # Use torchaudio to save rather than soundfile
-        torchaudio.save(
-            buffer, 
-            audio_tensor.unsqueeze(0), # Add batch dimension [1, channels, samples]
-            output_sampling_rate, 
-            format="wav"
-        )
+        # Clean up temporary file
+        try:
+            os.unlink("sample.wav")
+        except OSError as e:
+            logger.warning(f"Failed to delete temporary file {"sample.wav"}: {e}")
             
         buffer.seek(0)
         logger.info("Audio generation complete.")
