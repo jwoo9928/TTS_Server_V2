@@ -136,38 +136,27 @@ def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
         
         # Decode to audio waveform
         wavs = model.autoencoder.decode(codes)
-        audio_np = wavs[0].cpu().numpy()
+        audio_tensor = wavs[0].cpu()
 
         # --- Debugging ---
         output_sampling_rate = model.autoencoder.sampling_rate
+        audio_np = audio_tensor.numpy()
         logger.info(f"Attempting to write audio data:")
         logger.info(f"  - Data type: {audio_np.dtype}")
         logger.info(f"  - Data shape: {audio_np.shape}")
         logger.info(f"  - Sampling rate: {output_sampling_rate}")
         # --- End Debugging ---
         
-        # Save to a temporary file first, then read it back
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-            temp_path = temp_file.name
-            
-        # Ensure data is float32, which is common for sf.write WAV
-        if audio_np.dtype != np.float32:
-            logger.warning(f"Audio data type is {audio_np.dtype}, converting to float32 for writing.")
-            audio_np = audio_np.astype(np.float32)
-            
-        # Write to temporary file
-        sf.write(temp_path, audio_np, output_sampling_rate, subtype='FLOAT')
-        
-        # Read the file back into memory
+        # Use BytesIO buffer directly with torchaudio
         buffer = io.BytesIO()
-        with open(temp_path, 'rb') as f:
-            buffer.write(f.read())
         
-        # Clean up temporary file
-        try:
-            os.unlink(temp_path)
-        except OSError as e:
-            logger.warning(f"Failed to delete temporary file {temp_path}: {e}")
+        # Use torchaudio to save rather than soundfile
+        torchaudio.save(
+            buffer, 
+            audio_tensor.unsqueeze(0), # Add batch dimension [1, channels, samples]
+            output_sampling_rate, 
+            format="wav"
+        )
             
         buffer.seek(0)
         logger.info("Audio generation complete.")
