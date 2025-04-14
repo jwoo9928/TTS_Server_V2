@@ -79,46 +79,65 @@ class BatchTTSRequest(BaseModel):
 class ProcessManager:
     """TTS 작업을 관리하기 위한 프로세스 매니저"""
     
-    def __init__(self, max_workers=WORKER_PROCESSES):
+    def __init__(self, max_workers=WORKER_PROCESSES, config=None):
         self.max_workers = max_workers
-        self.executor = ProcessPoolExecutor(max_workers=max_workers)
-        self.tts_interfaces = {}
+        self.config = config or TTSModelConfig()
+        
+        # 워커 프로세스 시작 시 모델 로드를 위한 초기화 함수
+        self.executor = ProcessPoolExecutor(
+            max_workers=max_workers,
+            initializer=self._initialize_worker,
+            initargs=(self.config,)
+        )
         logger.info(f"프로세스 매니저 초기화: 최대 워커 수 {max_workers}")
-        
-    def get_tts_interface(self, config: TTSModelConfig):
-        """프로세스별 TTS 인터페이스 가져오기 (캐싱)"""
-        # 각 프로세스에서 TTS 인터페이스를 한 번만 초기화하기 위해
-        # 프로세스 ID를 기준으로 캐싱
-        pid = os.getpid()
-        
-        if pid not in self.tts_interfaces:
-            # 새로운 인터페이스 생성
-            model_enum = getattr(outetts.Models, config.model)
-            backend_enum = getattr(outetts.Backend, config.backend)
-            quantization_enum = getattr(outetts.LlamaCppQuantization, config.quantization)
-            
-            logger.info(f"프로세스 {pid}에서 새 TTS 인터페이스 초기화")
-            
-            # CUDA 설정을 환경 변수로 처리
-            if config.use_cuda:
-                os.environ["CMAKE_ARGS"] = "-DGGML_CUDA=on"
-            
-            interface = outetts.Interface(
-                config=outetts.ModelConfig.auto_config(
-                    model=model_enum,
-                    backend=backend_enum,
-                    quantization=quantization_enum
-                )
-            )
-            self.tts_interfaces[pid] = interface
-            
-        return self.tts_interfaces[pid]
     
-    def submit_tts_task(self, config, tts_request, speaker_path=None):
+    @staticmethod
+    def _initialize_worker(config):
+        """워커 프로세스 초기화 함수 - 모델 미리 로드"""
+        pid = os.getpid()
+        logger.info(f"워커 프로세스 {pid} 초기화 중: TTS 모델 사전 로드")
+        
+        # CUDA 설정
+        if config.use_cuda:
+            os.environ["CMAKE_ARGS"] = "-DGGML_CUDA=on"
+        
+        # 모델 초기화 및 로드
+        model_enum = getattr(outetts.Models, config.model)
+        backend_enum = getattr(outetts.Backend, config.backend)
+        quantization_enum = getattr(outetts.LlamaCppQuantization, config.quantization)
+        
+        interface = outetts.Interface(
+            config=outetts.ModelConfig.auto_config(
+                model=model_enum,
+                backend=backend_enum,
+                quantization=quantization_enum
+            )
+        )
+        
+        # 프로세스 전역 변수에 인터페이스 저장
+        global _tts_interface
+        _tts_interface = interface
+        
+        logger.info(f"워커 프로세스 {pid}에서 TTS 모델 로드 완료")
+    
+    def get_tts_interface(self):
+        """현재 프로세스의 TTS 인터페이스 가져오기"""
+        pid = os.getpid()
+        global _tts_interface
+        
+        if '_tts_interface' in globals():
+            logger.debug(f"프로세스 {pid}에서 기존 TTS 인터페이스 반환")
+            return _tts_interface
+        
+        # 혹시 초기화되지 않은 경우를 위한 폴백
+        logger.warning(f"프로세스 {pid}에서 TTS 인터페이스가 초기화되지 않음. 동적 로드 중...")
+        self._initialize_worker(self.config)
+        return _tts_interface
+    
+    def submit_tts_task(self, tts_request, speaker_path=None):
         """TTS 작업을 프로세스 풀에 제출"""
         return self.executor.submit(
             process_tts_request, 
-            config, 
             tts_request, 
             speaker_path
         )
@@ -146,15 +165,15 @@ def load_speaker(interface, speaker_name):
         else:
             raise ValueError(f"스피커 프로필을 찾을 수 없습니다: {speaker_name}")
 
-def process_tts_request(config, tts_request, speaker_path=None):
+def process_tts_request(tts_request, speaker_path=None):
     """TTS 요청 처리 (별도 프로세스에서 실행)"""
     try:
         pid = os.getpid()
         start_time = time.time()
         logger.info(f"프로세스 {pid}에서 TTS 요청 처리 시작: {tts_request.text[:30]}...")
         
-        # TTS 인터페이스 가져오기
-        interface = process_manager.get_tts_interface(config)
+        # 이미 로드된 TTS 인터페이스 가져오기
+        interface = process_manager.get_tts_interface()
         
         # 스피커 로드
         if speaker_path and os.path.exists(speaker_path):
@@ -205,7 +224,7 @@ def process_tts_request(config, tts_request, speaker_path=None):
             "error": str(e)
         }
 
-async def process_batch_with_semaphore(sem, config, tts_request, speaker_path=None):
+async def process_batch_with_semaphore(sem, tts_request, speaker_path=None):
     """세마포어를 사용하여 비동기적으로 TTS 작업 처리"""
     async with sem:
         # 함수를 실행할 이벤트 루프
@@ -215,7 +234,6 @@ async def process_batch_with_semaphore(sem, config, tts_request, speaker_path=No
         return await loop.run_in_executor(
             None,  # 기본 실행자 사용
             process_manager.submit_tts_task,
-            config,
             tts_request,
             speaker_path
         )
@@ -240,11 +258,8 @@ async def read_root():
 async def create_tts(tts_request: TTSRequest):
     """단일 TTS 요청 처리 엔드포인트"""
     try:
-        # 기본 모델 설정
-        config = TTSModelConfig()
-        
         # TTS 요청 처리를 프로세스 풀에 제출
-        future = process_manager.submit_tts_task(config, tts_request)
+        future = process_manager.submit_tts_task(tts_request)
         
         # 결과 대기
         result = future.result()
@@ -267,9 +282,6 @@ async def create_tts(tts_request: TTSRequest):
 async def create_batch_tts(batch_request: BatchTTSRequest):
     """배치 TTS 요청 처리 엔드포인트"""
     try:
-        # 기본 모델 설정
-        config = TTSModelConfig()
-        
         # 동시 처리 수를 제한하는 세마포어
         # CPU 코어 수에 맞게 조정
         sem = asyncio.Semaphore(WORKER_PROCESSES)
@@ -292,7 +304,7 @@ async def create_batch_tts(batch_request: BatchTTSRequest):
             )
             
             # 비동기 작업 생성
-            task = process_batch_with_semaphore(sem, config, tts_request)
+            task = process_batch_with_semaphore(sem, tts_request)
             tasks.append(task)
         
         # 모든 작업 동시 실행
@@ -339,9 +351,8 @@ async def upload_speaker(
             temp_file.write(content)
             temp_file.close()
             
-            # 기본 모델 설정으로 TTS 인터페이스 초기화
-            config = TTSModelConfig()
-            interface = process_manager.get_tts_interface(config)
+            # 이미 로드된 TTS 인터페이스 사용
+            interface = process_manager.get_tts_interface()
             
             # 스피커 프로필 생성
             speaker = interface.create_speaker(temp_file.name)
