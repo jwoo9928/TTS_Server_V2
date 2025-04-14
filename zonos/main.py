@@ -112,7 +112,7 @@ async def process_audio_reference(speaker_path: Optional[str] = None, speaker_fi
     
     return wav, sampling_rate
 
-def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
+def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed, emotion_list=None):
     """Synchronous function to generate audio using Zonos."""
     if model is None:
         raise RuntimeError("Zonos model is not initialized.")
@@ -122,9 +122,18 @@ def generate_audio_sync(text, speaker_wav, sampling_rate, language, speed):
         
         # Create speaker embedding from reference audio
         speaker = model.make_speaker_embedding(speaker_wav, sampling_rate)
+
+        if emotion_list is None:
+           emotion_tensor = None
+
+        else:
+            emotion_tensor = torch.tensor(
+                list(map(float, emotion_list)), 
+                device=device
+            )
         
         # Prepare conditioning
-        cond_dict = make_cond_dict(text=text, speaker=speaker, language=language)
+        cond_dict = make_cond_dict(text=text, speaker=speaker, language=language, emotion=emotion_tensor)
         conditioning = model.prepare_conditioning(cond_dict)
         
         # Apply speed factor if not 1.0
@@ -164,6 +173,7 @@ async def text_to_speech(
     language: str = Form("en-us"),
     speed: float = Form(1.0),
     speaker_path: Optional[str] = Form(None),
+    emotion_list: Optional[list[str]] = Form(None),  # Fixed type annotation for emotion_list
     speaker_file: Optional[UploadFile] = File(None, description="Optional speaker reference audio file")
 ):
     """
@@ -196,7 +206,8 @@ async def text_to_speech(
             speaker_wav,
             sampling_rate,
             language, # Use the form parameter
-            speed # Use the form parameter
+            speed, # Use the form parameter
+            emotion_list, # Use the form parameter
         )
         
         if audio_buffer is None:
@@ -214,45 +225,17 @@ async def text_to_speech(
         logger.error(f"Unhandled exception in /tts endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
-@app.post("/tts-stream")
-async def text_to_speech_stream(
-    text: str = Form(...),
-    language: str = Form("en-us"),
-    speed: float = Form(1.0),
-    speaker_path: Optional[str] = Form(None),
-    speaker_file: Optional[UploadFile] = File(None, description="Optional speaker reference audio file")
-):
-    """
-    Generates TTS audio and streams the WAV audio chunks as they become available.
-    Uses multipart/form-data like the /tts endpoint.
-    """
-    if model is None:
-        raise HTTPException(status_code=503, detail="TTS Service Unavailable: Model not loaded.")
 
-    try:
-        # Load speaker reference audio from path or file
-        speaker_wav, sampling_rate = await process_audio_reference(speaker_path, speaker_file)
-        
-        # Create a chunk generator
-        chunk_generator = AudioChunkGenerator(
-            model, 
-            text, 
-            speaker_wav, 
-            sampling_rate, 
-            language, 
-            speed
-        )
-        
-        # Return streaming response
-        return StreamingResponse(
-            chunk_generator.generate_chunks(),
-            media_type="audio/wav",
-            headers={"Content-Disposition": "attachment; filename=audio_stream.wav"}
-        )
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=f"TTS Service Unavailable: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unhandled exception in /tts-stream endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+# e1 = 0.1  # anger
+# e2 = 0.4  # anticipation
+# e3 = 0.0  # disgust
+# e4 = 0.2  # fear
+# e5 = 0.9  # joy
+# e6 = 0.1  # sadness
+# e7 = 0.3  # surprise
+# e8 = 0.6  # trust
+
+
+# 완전 서버리스처럼 최소비용 유지하고 싶으면 auto-scaling 기반 서버리스 아키텍처(Lambda+S3+TorchScript)로 가는 것도 고려해볼 수 있어.
+
