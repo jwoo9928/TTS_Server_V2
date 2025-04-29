@@ -30,7 +30,8 @@ RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # Copy requirements first to leverage Docker cache
-COPY --chown=appuser:appuser nari/requirements.txt .
+# Assumes build context is the 'nari' directory itself
+COPY --chown=appuser:appuser requirements.txt .
 
 # Install Python dependencies within the venv
 # Upgrade pip first
@@ -38,7 +39,12 @@ RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY --chown=appuser:appuser nari/app.py .
+# Assumes build context is the 'nari' directory itself
+COPY --chown=appuser:appuser app.py .
+
+# Copy the local 'dia' library source code
+# Assumes a 'dia' directory exists in the build context ('nari' directory)
+COPY --chown=appuser:appuser dia /app/dia
 
 # Set environment variables (adapted from reference)
 # LD_LIBRARY_PATH might be inherited or set correctly by the base image,

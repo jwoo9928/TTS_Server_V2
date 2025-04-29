@@ -7,5 +7,4 @@ torch --index-url https://download.pytorch.org/whl/cu121
 # Add common dependencies for Hugging Face models
 transformers
 huggingface_hub
-# Assuming 'dia' is the pip package name for the Dia library
-dia
+# dia library is copied locally, removed from pip install
