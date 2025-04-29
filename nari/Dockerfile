@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10-dev \
     build-essential \
     libsndfile1 \
+    # Add development headers for libsndfile
+    libsndfile1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Make python3.10 the default python
