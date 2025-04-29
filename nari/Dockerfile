@@ -1,49 +1,53 @@
-# Use an official NVIDIA CUDA base image compatible with PyTorch 2.x and CUDA 12.x
-# Using 12.4 as a stable base, generally compatible with 12.6 runtime needs for PyTorch
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+# Use the recommended PyTorch base image from the reference Dockerfile
+FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
-# Prevent interactive prompts during package installation
+# Set non-interactive frontend
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install Python, pip, and common dependencies
+# Install system dependencies (including venv tools)
+# Keep libsndfile1-dev just in case soundfile compilation needs it
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3-pip \
-    python3.10-dev \
-    build-essential \
+    python3-venv \
     libsndfile1 \
-    # Add development headers for libsndfile
     libsndfile1-dev \
-    && rm -rf /var/lib/apt/lists/*
+    ffmpeg \
+    curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Make python3.10 the default python
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
-RUN update-alternatives --set python3 /usr/bin/python3.10
+# Create non-root user and set up directories
+# Using UID 1000 as it's a common default, adjust if needed
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app && \
+    chown -R appuser:appuser /app
 
-# Upgrade pip
-RUN python3 -m pip install --no-cache-dir --upgrade pip
-
-# Set the working directory
+# Switch to non-root user
+USER appuser
 WORKDIR /app
 
-# Copy the requirements file first to leverage Docker cache
-COPY requirements.txt .
+# Create and activate virtual environment
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
-# Install Python dependencies, including PyTorch for CUDA 12.1
-# This step might take a while
+# Copy requirements first to leverage Docker cache
+COPY --chown=appuser:appuser nari/requirements.txt .
+
+# Install Python dependencies within the venv
+# Upgrade pip first
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code into the container
-COPY app.py .
-# If the 'dia' model needs to be copied or downloaded, add steps here
-# e.g., COPY ./path/to/dia/model /app/dia/model
-# Or RUN commands to download it
+# Copy the application code
+COPY --chown=appuser:appuser nari/app.py .
 
-# Expose the port the app runs on
+# Set environment variables (adapted from reference)
+# LD_LIBRARY_PATH might be inherited or set correctly by the base image,
+# but explicitly setting it based on the reference is safer.
+ENV USE_GPU=true
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda-12.1/lib64:${LD_LIBRARY_PATH}
+
+# Expose the FastAPI port
 EXPOSE 8080
 
-# Command to run the application using Uvicorn with multiple workers
-# The number of workers can be adjusted based on the specific GPU and workload
-# Start with a reasonable number like 4, but monitor performance
+# Command to run the FastAPI application using Uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
