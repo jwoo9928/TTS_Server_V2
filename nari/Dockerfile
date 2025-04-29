@@ -26,14 +26,14 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip
 WORKDIR /app
 
 # Copy the requirements file first to leverage Docker cache
-COPY nari/requirements.txt .
+COPY requirements.txt .
 
 # Install Python dependencies, including PyTorch for CUDA 12.1
 # This step might take a while
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code into the container
-COPY nari/app.py .
+COPY app.py .
 # If the 'dia' model needs to be copied or downloaded, add steps here
 # e.g., COPY ./path/to/dia/model /app/dia/model
 # Or RUN commands to download it

@@ -2,7 +2,13 @@ fastapi
 uvicorn[standard]
 soundfile
 numpy
+libsndfile1
+ffmpeg
 # PyTorch 2.x for CUDA 12.1 (compatible with CUDA 12.x toolkit)
 torch --index-url https://download.pytorch.org/whl/cu121
-# Add the 'dia' model package name here if it's installable via pip
-# e.g., dia-model-package-name
+# Add common dependencies for Hugging Face models
+transformers
+huggingface_hub
+
+# Assuming 'dia' is the pip package name for the Dia library
+dia
