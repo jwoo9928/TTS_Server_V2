@@ -1,116 +1,116 @@
 import asyncio
 import itertools
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import torch
-from transformers import pipeline
 from starlette.concurrency import run_in_threadpool
+
+# MLX-Audio TTS 라이브러리 직접 임포트
+from mlx_audio.tts.generate import generate_audio  # ([github.com](https://github.com/Blaizzy/mlx-audio?utm_source=chatgpt.com))
 
 # -------------------- Configuration --------------------
 MODEL_NAME = "mlx-community/Spark-TTS-0.5B-fp16"
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-N_WORKERS = 4                        # Number of model instances
-MAX_BATCH_SIZE = 4                   # Max requests per batch
-MAX_WAIT_TIME = 0.01                 # Max wait time (seconds) for batching
+DEFAULT_MODEL_DIR = None   # 기본 Hugging Face hub 경로 사용
+DEVICE_ID = 0
+N_WORKERS = 4  # 병렬 워커 수
+MAX_BATCH_SIZE = 4
+MAX_WAIT_TIME = 0.01  # 10ms
 
 # -------------------- Request/Response Schemas --------------------
 class TTSRequest(BaseModel):
     text: str
+    model_dir: Optional[str] = None
+    device_id: Optional[int] = DEVICE_ID
+    save_dir: Optional[str] = None
+    prompt_text: Optional[str] = None
+    prompt_speech_path: Optional[str] = None
 
 class TTSResponse(BaseModel):
-    audio: bytes                     # Raw WAV bytes
+    audio: bytes
     sample_rate: int
 
-# -------------------- Worker Definition --------------------
+# -------------------- 워커 정의 --------------------
 class TTSWorker:
-    def __init__(self, device: torch.device):
-        self.device = device
-        # Initialize huggingface TTS pipeline in FP16
-        self.pipe = pipeline(
-            task="text-to-speech",
-            model=MODEL_NAME,
-            torch_dtype=torch.float16,
-            device=self.device.index if self.device.type == "cuda" else -1
-        )
+    def __init__(self):
+        pass  # 상태 없음
 
-    def run_batch(self, texts: List[str]) -> List[Tuple[bytes, int]]:
-        # Blocking call: generate audio batch
-        results = self.pipe(texts)
-        return [(r["audio"], r["sample_rate"]) for r in results]
+    def run_batch(
+        self,
+        batch: List[Tuple[str, str, int, Optional[str], Optional[str], Optional[str]]]
+    ) -> List[Tuple[bytes, int]]:
+        outputs = []
+        for text, model_name, device, prompt_text, prompt_path, save_dir in batch:
+            # generate_audio 호출 시 옵션 매핑
+            wav_np = generate_audio(
+                text=text,
+                model_path=model_name,
+                device=device,
+                save_dir=save_dir,
+                prompt_text=prompt_text,
+                prompt_speech_path=prompt_path,
+                join_audio=True,
+                audio_format="wav",
+                sample_rate=16000,
+                verbose=False
+            )  # ([github.com](https://github.com/Blaizzy/mlx-audio?utm_source=chatgpt.com))
+            # numpy array to bytes
+            audio_bytes = wav_np.tobytes()
+            outputs.append((audio_bytes, 16000))
+        return outputs
 
-# -------------------- Global Batcher --------------------
+# -------------------- 글로벌 배칭 & 서버 --------------------
 app = FastAPI()
+workers = [TTSWorker() for _ in range(N_WORKERS)]
+rr = itertools.cycle(range(N_WORKERS))
+queue: List[Tuple[Tuple[str, str, int, Optional[str], Optional[str], Optional[str]], asyncio.Future]] = []
+lock = asyncio.Lock()
+evt = asyncio.Event()
 
-# Pool of workers & round-robin selector
-workers = []
-round_robin = itertools.cycle(range(N_WORKERS))
-
-# Queues and synchronization
-batch_queue: List[Tuple[str, asyncio.Future]] = []
-queue_lock = asyncio.Lock()
-batch_event = asyncio.Event()
-
-# -------------------- Background Batching Task --------------------
 @app.on_event("startup")
-async def startup_event():
-    # Initialize workers
-    for _ in range(N_WORKERS):
-        workers.append(TTSWorker(DEVICE))
-    # Start batch handler
+async def startup():
     asyncio.create_task(batch_handler())
 
 async def batch_handler():
     while True:
-        # Wait until batch_event is set
-        await batch_event.wait()
-        # Allow time to collect additional requests
+        await evt.wait()
         await asyncio.sleep(MAX_WAIT_TIME)
-
-        async with queue_lock:
-            batch = list(batch_queue)
-            batch_queue.clear()
-            batch_event.clear()
-
-        if not batch:
-            continue
-
-        texts, futures = zip(*[(text, fut) for text, fut in batch])
-        worker_idx = next(round_robin)
-        worker = workers[worker_idx]
-
-        # Offload blocking inference to thread pool
+        async with lock:
+            batch = list(queue)
+            queue.clear()
+            evt.clear()
+        inputs, futures = zip(*batch)
+        worker = workers[next(rr)]
         try:
-            results = await run_in_threadpool(worker.run_batch, list(texts))
+            results = await run_in_threadpool(worker.run_batch, list(inputs))
         except Exception as e:
             for fut in futures:
                 if not fut.done():
                     fut.set_exception(e)
             continue
-
-        # Map results back to futures
         for (audio, sr), fut in zip(results, futures):
             if not fut.done():
                 fut.set_result({"audio": audio, "sample_rate": sr})
 
-# -------------------- API Endpoint --------------------
 @app.post("/tts", response_model=TTSResponse)
-async def tts_endpoint(req: TTSRequest):
-    # Reject too long texts
-    if len(req.text) > 500:
-        raise HTTPException(status_code=400, detail="Text length exceeds limit.")
-
+async def tts(req: TTSRequest):
+    if not req.text:
+        raise HTTPException(400, "text is required")
+    item = (
+        req.text,
+        req.model_dir or MODEL_NAME,
+        req.device_id or DEVICE_ID,
+        req.prompt_text,
+        req.prompt_speech_path,
+        req.save_dir
+    )
     fut = asyncio.get_event_loop().create_future()
-    async with queue_lock:
-        batch_queue.append((req.text, fut))
-        # Trigger batch processing when full or first request
-        if len(batch_queue) >= MAX_BATCH_SIZE or len(batch_queue) == 1:
-            batch_event.set()
-
-    # Await result
+    async with lock:
+        queue.append((item, fut))
+        if len(queue) >= MAX_BATCH_SIZE or len(queue) == 1:
+            evt.set()
     res = await fut
     return TTSResponse(audio=res["audio"], sample_rate=res["sample_rate"])
 
-# -------------------- Run with Uvicorn --------------------
-# uvicorn.run(app, host="0.0.0.0", port=8000, workers=1)
+# uvicorn 실행 예시
+# uvicorn optimized_spark_tts_server:app --host 0.0.0.0 --port 8000 --workers 1
