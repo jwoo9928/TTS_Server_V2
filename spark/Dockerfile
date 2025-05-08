@@ -15,10 +15,10 @@
         pip3 install -r requirements.txt
     
     # Copy application code
-    COPY fastapi_spark_tts.py ./
+    COPY main.py ./
     
     # Expose the port the app runs on
     EXPOSE 8080
     
     # Start the FastAPI server
-    CMD ["uvicorn", "fastapi_spark_tts:app", "--host", "0.0.0.0", "--port", "8080"]
+    CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
