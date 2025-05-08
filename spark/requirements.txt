@@ -3,6 +3,9 @@ uvicorn
 pydantic
 starlette
 # torch>=2.5.1
-mlx-audio
+
 numpy
 asyncio
+
+# mlx-audio GitHub에서 직접 설치 (PyTorch 의존성 우회)
+git+https://github.com/Blaizzy/mlx-audio.git#egg=mlx-audio

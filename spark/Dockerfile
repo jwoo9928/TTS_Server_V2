@@ -12,7 +12,7 @@
     # Copy and install dependencies
     COPY requirements.txt ./
     RUN pip3 install --upgrade pip && \
-        pip3 install --no-deps -r requirements.txt
+        pip3 install -r requirements.txt
     
     # Copy application code
     COPY main.py ./
