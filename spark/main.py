@@ -1,13 +1,13 @@
 import asyncio
 import itertools
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 # MLX-Audio TTS 라이브러리 직접 임포트
-from mlx_audio.tts.generate import generate_audio  # ([github.com](https://github.com/Blaizzy/mlx-audio?utm_source=chatgpt.com))
+from mlx_audio.tts.generate import generate_audio
 
 # -------------------- Configuration --------------------
 MODEL_NAME = "mlx-community/Spark-TTS-0.5B-fp16"
@@ -20,8 +20,6 @@ MAX_WAIT_TIME = 0.01  # 10ms
 # -------------------- Request/Response Schemas --------------------
 class TTSRequest(BaseModel):
     text: str
-    model_dir: Optional[str] = None
-    device_id: Optional[int] = DEVICE_ID
     save_dir: Optional[str] = None
     prompt_text: Optional[str] = None
     prompt_speech_path: Optional[str] = None
@@ -37,15 +35,15 @@ class TTSWorker:
 
     def run_batch(
         self,
-        batch: List[Tuple[str, str, int, Optional[str], Optional[str], Optional[str]]]
+        batch: List[Tuple[str, Optional[str], Optional[str], Optional[str]]]
     ) -> List[Tuple[bytes, int]]:
         outputs = []
-        for text, model_name, device, prompt_text, prompt_path, save_dir in batch:
+        for text, prompt_text, prompt_path, save_dir in batch:
             # generate_audio 호출 시 옵션 매핑
             wav_np = generate_audio(
                 text=text,
-                model_path=model_name,
-                device=device,
+                model_path=MODEL_NAME,
+                device=DEVICE_ID,
                 save_dir=save_dir,
                 prompt_text=prompt_text,
                 prompt_speech_path=prompt_path,
@@ -53,7 +51,7 @@ class TTSWorker:
                 audio_format="wav",
                 sample_rate=16000,
                 verbose=False
-            )  # ([github.com](https://github.com/Blaizzy/mlx-audio?utm_source=chatgpt.com))
+            )
             # numpy array to bytes
             audio_bytes = wav_np.tobytes()
             outputs.append((audio_bytes, 16000))
@@ -63,7 +61,7 @@ class TTSWorker:
 app = FastAPI()
 workers = [TTSWorker() for _ in range(N_WORKERS)]
 rr = itertools.cycle(range(N_WORKERS))
-queue: List[Tuple[Tuple[str, str, int, Optional[str], Optional[str], Optional[str]], asyncio.Future]] = []
+queue: List[Tuple[Tuple[str, Optional[str], Optional[str], Optional[str]], asyncio.Future]] = []
 lock = asyncio.Lock()
 evt = asyncio.Event()
 
@@ -79,6 +77,10 @@ async def batch_handler():
             batch = list(queue)
             queue.clear()
             evt.clear()
+            
+        if not batch:  # 빈 배치 체크
+            continue
+            
         inputs, futures = zip(*batch)
         worker = workers[next(rr)]
         try:
@@ -98,8 +100,6 @@ async def tts(req: TTSRequest):
         raise HTTPException(400, "text is required")
     item = (
         req.text,
-        req.model_dir or MODEL_NAME,
-        req.device_id or DEVICE_ID,
         req.prompt_text,
         req.prompt_speech_path,
         req.save_dir
