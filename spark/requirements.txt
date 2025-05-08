@@ -1,0 +1,10 @@
+# ---------- requirements.txt ----------
+
+# FastAPI
+fastapi
+uvicorn[standard]
+
+# PyTorch & Transformers
+# For CUDA 11.7 compatibility, specify index URL if needed
+torch
+transformers
